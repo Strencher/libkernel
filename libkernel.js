@@ -70,9 +70,7 @@ export const WebpackModules = (() => {
         get Filters() {return Filters;}
         get chunkName() {return "webpackChunkdiscord_app";}
 
-        constructor() {
-            if (DiscordSplash) return;
-
+       constructor() {
             this.globalPromise = (async () => {
                 while (!("_" in window)) await Utilities.sleep(5);
             })();
