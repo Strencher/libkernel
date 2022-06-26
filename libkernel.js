@@ -10,6 +10,20 @@ export const Utilities = new class Utilities {
 const monkeyPatches = new WeakMap;
 const proxySymbol = Symbol("monkeyPatched");
 export const monkeyPatch = (target, name, fn, {force = true} = {}) => {
+    if (typeof name === "object") {
+        const patches = new Set();
+
+        for (const method of Object.keys(name)) {
+            const patchFn = name[method];
+
+            patches.add(
+                monkeyPatch(target, method, patchFn)
+            );
+        }
+
+        return patches;
+    }
+
     if (target[name] == null && force) target[name] = function () {};
     if (typeof target[name] !== "function") throw new Error("Method to patch is not a function.");
 
@@ -52,15 +66,15 @@ export const monkeyPatch = (target, name, fn, {force = true} = {}) => {
         });
     }
 
-    const monkeyPatch = monkeyPatches.get(original);
-    monkeyPatch.patches.add(fn);
+    const patch = monkeyPatches.get(original);
+    patch.patches.add(fn);
     Object.defineProperty(target, name, {
         ...Object.getOwnPropertyDescriptor(target, name),
-        value: monkeyPatch.proxyFn
+        value: patch.proxyFn
     });
 
     return () => {
-        monkeyPatch.patches.delete(fn);
+        patch.patches.delete(fn);
     };
 }
 
@@ -111,7 +125,7 @@ export const WebpackModules = (() => {
 
         get require() {
             if (this._require) return this._require;
-            if (!(this.chunkName in window)) return null;
+            if (!Array.isArray(window[this.chunkName])) return null;
 
             const chunk = [[Symbol("kernel-lib")], {}, _ => _];
             this._require = window[this.chunkName].push(chunk);
