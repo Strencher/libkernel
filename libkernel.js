@@ -1,9 +1,22 @@
 export const Utilities = new class Utilities {
     sleep(ms) {return new Promise(res => setTimeout(res, ms));}
-    makLazy(factory) {
+    makeLazy(factory, useFn = false) {
         let cache;
     
-        return () => (cache ??= factory(), cache);
+        if (useFn) return () => (cache ??= factory(), cache);
+
+        return new Proxy({}, {
+            get(_, key) {
+                cache ??= factory();
+
+                return cache[key];
+            },
+            set(_, key, value) {
+                cache ??= factory();
+
+                cache[key] = value;
+            }
+        });
     }
 }
 
