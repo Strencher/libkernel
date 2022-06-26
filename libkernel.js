@@ -107,23 +107,9 @@ export const WebpackModules = (() => {
         get chunkName() {return "webpackChunkdiscord_app";}
 
         constructor() {
-            this.globalPromise = new Promise(resolve => {
-                if (this.chunkName in window) return resolve();
-
-                Object.defineProperty(window, this.chunkName, {
-                    configurable: true,
-                    set: (value) => {
-                        Object.defineProperty(window, this.chunkName, {
-                            value,
-                            configurable: true,
-                            enumerable: true,
-                            writable: true
-                        });
-
-                        resolve();
-                    }
-                });
-            });
+            this.globalPromise = async function(){
+                while (!Array.isArray(window[this.chunkName])) await Utilities.sleep();
+            }();
             
             this.readyPromise = this.globalPromise.then(() => new Promise(async done => {
                 let Dispatcher;
