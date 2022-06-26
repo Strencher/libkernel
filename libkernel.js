@@ -1,10 +1,16 @@
 export const Utilities = new class Utilities {
     sleep(ms) {return new Promise(res => setTimeout(res, ms));}
+    makLazy(factory) {
+        let cache;
+    
+        return () => (cache ??= factory(), cache);
+    }
 }
 
 const monkeyPatches = new WeakMap;
 const proxySymbol = Symbol("monkeyPatched");
-export const monkeyPatch = (target, name, fn) => {
+export const monkeyPatch = (target, name, fn, {force = true} = {}) => {
+    if (target[name] == null && force) target[name] = function () {};
     if (typeof target[name] !== "function") throw new Error("Method to patch is not a function.");
 
     const original = target[name][proxySymbol] ?? target[name];
@@ -16,6 +22,9 @@ export const monkeyPatch = (target, name, fn) => {
             let returnValue, returnValueSet = false;
 
             const data = {
+                get returnValueSet() {return returnValueSet;},
+                get defaultPrevented() {return defaultPrevented;},
+                get returnValue() {return returnValue;},
                 methodArguments: arguments,
                 preventDefault() {defaultPrevented = true;},
                 return(value) {returnValue = value; returnValueSet = true;},
@@ -64,16 +73,30 @@ export const WebpackModules = (() => {
         byDisplayName(name) {
             return m => m?.displayName === name;
         }
-    }; 
+    };
 
     return new class WebpackModules {
         get Filters() {return Filters;}
         get chunkName() {return "webpackChunkdiscord_app";}
 
-       constructor() {
-            this.globalPromise = (async () => {
-                while (!("_" in window)) await Utilities.sleep(5);
-            })();
+        constructor() {
+            this.globalPromise = new Promise(resolve => {
+                if (this.chunkName in window) return resolve();
+
+                Object.defineProperty(window, this.chunkName, {
+                    configurable: true,
+                    set: (value) => {
+                        Object.defineProperty(window, this.chunkName, {
+                            value,
+                            configurable: true,
+                            enumerable: true,
+                            writable: true
+                        });
+
+                        resolve();
+                    }
+                });
+            });
             
             this.readyPromise = this.globalPromise.then(() => new Promise(async done => {
                 let Dispatcher;
@@ -97,14 +120,14 @@ export const WebpackModules = (() => {
             return this.require;
         }
     
-        getModule(filter, all = false) {
+        getModule(filter, {all = false, default: defaultExports = true} = {}) {
             const cache = this.require.c;
             if (!cache) return;
 
             const found = [];
             const modules = Object.values(this.require.c);
             const wrapped = (module, id) => {
-                try {return Boolean(filter(module, id))}
+                try {return Boolean(filter(module, id));}
                 catch {return false;}
             };
 
@@ -119,23 +142,23 @@ export const WebpackModules = (() => {
                     found.push(exports);
                 }
                 else if ("__esModule" in exports && allowedTypes.has(typeof exports.default) && wrapped(exports.default, id)) {
-                    if (!all) return exports.default;
+                    if (!all) return defaultExports ? exports.default : exports;
 
-                    found.push(exports.default);
+                    found.push(defaultExports ? exports.default : exports);
                 } 
             }
 
-            return found;
+            return all ? found : null;
         }
     
-        then(fn) {return this.readyPromise.then(fn);}
+        getAllByProps(...props) {return this.getModule(Filters.byProps(...props), {all: true});}     
+        getByDisplayName(name) {return this.getModule(Filters.byDisplayName(name));}
         getDefault(filter) {return this.getModule((m, i) => filter(m.default, i));}
         getByRegex(regex) {return this.getModule(m => regex.test(m.toString()));}
-        getByDisplayName(name) {return this.getModule(Filters.byDisplayName(name));}
         getByProps(...props) {return this.getModule(Filters.byProps(...props));}
-        getAllByProps(...props) {return this.getModule(Filters.byProps(...props), true);}     
-        getModules(filter) {return this.getModule(filter, true);}
+        getModules(filter) {return this.getModule(filter, {all: true});}
         getByIndex(index) {return this.require?.c[index]?.exports;}
+        then(fn) {return this.readyPromise.then(fn);}
         getParent(filter) {
             let parent = null;
             
